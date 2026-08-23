@@ -1,12 +1,9 @@
 package io.wesner.robert.cb1060.moderninventory;
 
 import lombok.RequiredArgsConstructor;
+import lombok.val;
 import net.minecraft.server.*;
 import org.jspecify.annotations.NullMarked;
-
-import java.util.List;
-
-import lombok.val;
 
 @NullMarked
 @RequiredArgsConstructor
@@ -27,8 +24,8 @@ public class Packet102Translator {
                 return new InventoryProxy(
                     InventoryProxy.Type.CHEST,
                     inventory,
-                    0,
-                    player
+                    player,
+                    0
                 );
             }
         } else if (container instanceof ContainerWorkbench) {
@@ -36,15 +33,15 @@ public class Packet102Translator {
                 return new InventoryProxy(
                     InventoryProxy.Type.WORKBENCH,
                     ((ContainerWorkbench) container).resultInventory,
-                    0,
-                    player
+                    player,
+                    0
                 );
             } else if (i <= 9) {
                 return new InventoryProxy(
                     InventoryProxy.Type.WORKBENCH,
                     ((ContainerWorkbench) container).craftInventory,
-                    1,
-                    player
+                    player,
+                    1
                 );
             } else {
                 return playerInventoryProxy(10);
@@ -58,24 +55,24 @@ public class Packet102Translator {
                     return new InventoryProxy(
                         InventoryProxy.Type.FURNACE,
                         inventory,
-                        0,
-                        player
+                        player,
+                        0
                     );
                 // bottom slot
                 case 1:
                     return new InventoryProxy(
                         InventoryProxy.Type.FURNACE,
                         inventory,
-                        1,
-                        player
+                        player,
+                        1
                     );
                 // result slot
                 case 2:
                     return new InventoryProxy(
                         InventoryProxy.Type.FURNACE,
                         inventory,
-                        2,
-                        player
+                        player,
+                        2
                     );
                 default:
                     return playerInventoryProxy(3);
@@ -87,8 +84,8 @@ public class Packet102Translator {
                 return new InventoryProxy(
                     InventoryProxy.Type.DISPENSER,
                     inventory,
-                    0,
-                    player
+                    player,
+                    0
                 );
             } else {
                 return playerInventoryProxy(9);
@@ -98,15 +95,15 @@ public class Packet102Translator {
                 return new InventoryProxy(
                     InventoryProxy.Type.CRAFTING,
                     ((ContainerPlayer) container).resultInventory,
-                    0,
-                    player
+                    player,
+                    0
                 );
             } else if (i <= 4) {
                 return new InventoryProxy(
                     InventoryProxy.Type.CRAFTING,
                     ((ContainerPlayer) container).craftInventory,
-                    1,
-                    player
+                    player,
+                    1
                 );
             } else if (i <= 8) {
                 // could have done it in some silly math expression, but readability beats conciseness here
@@ -133,8 +130,8 @@ public class Packet102Translator {
                 return new InventoryProxy(
                     InventoryProxy.Type.PLAYER,
                     player.inventory,
-                    slot,
-                    player
+                    player,
+                    slot
                 );
             } else {
                 return playerInventoryProxy(9);
@@ -148,8 +145,8 @@ public class Packet102Translator {
         return new InventoryProxy(
             InventoryProxy.Type.PLAYER,
             player.inventory,
-            from,
-            player
+            player,
+            from
         );
     }
 }

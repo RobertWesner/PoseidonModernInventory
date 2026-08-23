@@ -49,7 +49,7 @@ public class ModernInventory extends JavaPlugin {
 
         val player = ((CraftPlayer)clickReceived.getPlayer()).getHandle();
         val world = clickReceived.getPlayer().getWorld();
-        val proxy = new Packet102Translator(clickReceived.getContainer(), player).proxy(clickReceived.getSlot());
+        val clickedInventory = new Packet102Translator(clickReceived.getContainer(), player).proxy(clickReceived.getSlot());
 
         if (clickReceived.isShift()) {
             if (player.activeContainer instanceof ContainerChest) {
@@ -57,16 +57,25 @@ public class ModernInventory extends JavaPlugin {
             } else if (player.activeContainer instanceof ContainerWorkbench) {
                 // workbenches only need player->grid and result->player (ALL stacks!)
 
-                if (proxy.getType() == InventoryProxy.Type.PLAYER) {
+                if (clickedInventory.getType() == InventoryProxy.Type.PLAYER) {
                     // player -> grid
-                    addFromProxy(translatePlayerInventory(clickReceived.getSlot() - 10), proxy, ((ContainerWorkbench) player.activeContainer).craftInventory);
-                } else if (clickReceived.getSlot() == 0 && proxy.get(0) != null) {
+                    transferFromSlot(
+                        translatePlayerInventory(clickReceived.getSlot() - 10),
+                        clickedInventory,
+                        new InventoryProxy(
+                            InventoryProxy.Type.CRAFTING,
+                            ((ContainerWorkbench) player.activeContainer).craftInventory,
+                            player,
+                            1
+                        )
+                    );
+                } else if (clickReceived.getSlot() == 0 && clickedInventory.get(0) != null) {
                     // result -> player
                     val grid = new CraftInventory(((ContainerWorkbench) player.activeContainer).craftInventory);
-                    val gridProxy = new InventoryProxy(InventoryProxy.Type.CRAFTING, grid.getInventory(), 0, player);
+                    val gridProxy = new InventoryProxy(InventoryProxy.Type.CRAFTING, grid, player, 0);
 
-                    val rawResult = proxy.get(0);
-                    assert rawResult != null; // I miss kotlin so damn bad
+                    val result = clickedInventory.get(0);
+                    assert result != null; // I miss kotlin so damn bad
 
                     // this only works because there is no vintage story style amount>1 crafting!
                     val amount = Arrays.stream(grid.getContents())
@@ -76,7 +85,6 @@ public class ModernInventory extends JavaPlugin {
                         .orElse(0);
 
                     val playerInventory = clickReceived.getPlayer().getInventory();
-                    val result = new ItemStack(rawResult.id, rawResult.count, (short)rawResult.damage);
 
                     if (
                         playerInventory.firstEmpty() == -1
@@ -94,6 +102,7 @@ public class ModernInventory extends JavaPlugin {
 
                         if (!remainder.isEmpty()) {
                             remainder.forEach((ignored, it) ->
+                                // TODO: make this vanish-safe by using player events that can get cancelled
                                 world.dropItemNaturally(clickReceived.getPlayer().getLocation(), it)
                             );
 
@@ -106,14 +115,14 @@ public class ModernInventory extends JavaPlugin {
                         if (g == null) continue;
 
                         // cannot be lower than that!
-                        if (g.count == crafted) {
+                        if (g.getAmount() == crafted) {
                             gridProxy.set(i, null);
 
                             continue;
                         }
 
-                        val clone = g.cloneItemStack();
-                        clone.count -= crafted;
+                        val clone = g.clone();
+                        clone.setAmount(g.getAmount() - crafted);
                         gridProxy.set(i, clone);
                     }
 
@@ -121,9 +130,9 @@ public class ModernInventory extends JavaPlugin {
                     clickReceived.getPlayer().updateInventory();
                 }
             } else if (player.activeContainer instanceof ContainerFurnace) {
-                if (proxy.getType() == InventoryProxy.Type.PLAYER) {
+                if (clickedInventory.getType() == InventoryProxy.Type.PLAYER) {
                     // player -> furnace
-                    // TODO: differentiate between fuel and smeltable!!! also wood in both depending on which one is full?
+                    // TODO: differentiate between fuel and smeltable!!! also wood in both depending on which one is full? how does modern do it?
                     val tef = ((TileEntityFurnace)Hackaroni.getInventoryBypassPrivate(player.activeContainer));
                     val block = world.getBlockAt(tef.x, tef.y, tef.z);
 
@@ -149,19 +158,21 @@ public class ModernInventory extends JavaPlugin {
         getServer().getPluginManager().registerEvents(listener, this);
     }
 
-    private void addFromProxy(int slot, InventoryProxy fromProxy, IInventory toInventory) {
-        val rawItem = fromProxy.get(slot);
-        assert rawItem != null;
-        val itemStack = new ItemStack(rawItem.id, rawItem.count, (short)rawItem.damage);
+    private void transferFromSlot(int slot, InventoryProxy from, InventoryProxy to) {
+        val itemStack = from.get(slot);
+        if (itemStack == null) return;
 
-        val remaining = new CraftInventory(toInventory).addItem(itemStack);
+        // cannot be more than one, as you cannot have more than one in slot, duh
+        val remaining = to.add(itemStack);
+        assert remaining.size() < 2;
+
         if (remaining.isEmpty()) {
-            fromProxy.set(slot, null);
+            from.set(slot, null);
         } else {
-            val newItem = rawItem.cloneItemStack();
-            newItem.count -= remaining.get(0).getAmount();
+            val newItem = itemStack.clone();
+            newItem.setAmount(newItem.getAmount() - remaining.get(0).getAmount());
 
-            fromProxy.set(slot, newItem);
+            from.set(slot, newItem);
         }
     }
 
