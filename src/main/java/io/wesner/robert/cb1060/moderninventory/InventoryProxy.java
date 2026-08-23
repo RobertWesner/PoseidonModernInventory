@@ -25,6 +25,7 @@ public class InventoryProxy {
     @Getter
     private final Type type;
     private final IInventory nmsInventory;
+    @Getter
     private final CraftInventory inventory;
     private final EntityPlayer player;
 

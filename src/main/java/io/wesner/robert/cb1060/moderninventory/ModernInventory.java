@@ -6,7 +6,6 @@ import lombok.val;
 import net.minecraft.server.*;
 import org.bukkit.ChatColor;
 import org.bukkit.craftbukkit.entity.CraftPlayer;
-import org.bukkit.craftbukkit.inventory.CraftInventory;
 import org.bukkit.event.Listener;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -47,14 +46,70 @@ public class ModernInventory extends JavaPlugin {
             return;
         }
 
-        val player = ((CraftPlayer)clickReceived.getPlayer()).getHandle();
+        val player = (CraftPlayer)clickReceived.getPlayer();
+        val nmsPlayer = player.getHandle();
         val world = clickReceived.getPlayer().getWorld();
-        val clickedInventory = new Packet102Translator(clickReceived.getContainer(), player).proxy(clickReceived.getSlot());
+        val clickedInventory = new Packet102Translator(clickReceived.getContainer(), nmsPlayer).proxy(clickReceived.getSlot());
+
+        // I loathe Java. Thank you for giving us BiConsumer instead of arbitrary length...
+        EndMySuffering<ItemStack, InventoryProxy, Integer> craftAll = ( result, grid, gridSize) -> {
+            // this only works because there is no vintage story style amount>1 crafting!
+            val amount = Arrays.stream(grid.getInventory().getContents())
+                .filter(Objects::nonNull)
+                .mapToInt(ItemStack::getAmount)
+                .min()
+                .orElse(0);
+
+            val playerInventory = clickReceived.getPlayer().getInventory();
+
+            if (
+                playerInventory.firstEmpty() == -1
+                    && playerInventory
+                    .all(result.getType()).entrySet().stream()
+                    .noneMatch((entry) -> entry.getValue().getAmount() > result.getType().getMaxStackSize() - result.getAmount())
+            ) {
+                return;
+            }
+
+            // loop seems stupid here, but it is much safer in almost full inventories!
+            int crafted;
+            for (crafted = 0; crafted < amount; crafted++) {
+                val remainder = playerInventory.addItem(result);
+
+                if (!remainder.isEmpty()) {
+                    remainder.forEach((ignored, it) ->
+                        // TODO: make this vanish-safe by using player events that can get cancelled
+                        world.dropItemNaturally(clickReceived.getPlayer().getLocation(), it)
+                    );
+
+                    break;
+                }
+            }
+
+            for (int i = 0; i < gridSize; i++) {
+                val g = grid.get(i);
+                if (g == null) continue;
+
+                // cannot be lower than that!
+                if (g.getAmount() == crafted) {
+                    grid.set(i, null);
+
+                    continue;
+                }
+
+                val clone = g.clone();
+                clone.setAmount(g.getAmount() - crafted);
+                grid.set(i, clone);
+            }
+
+            //noinspection deprecation
+            clickReceived.getPlayer().updateInventory();
+        };
 
         if (clickReceived.isShift()) {
-            if (player.activeContainer instanceof ContainerChest) {
+            if (nmsPlayer.activeContainer instanceof ContainerChest) {
                 // Chests already work natively so uhhhh
-            } else if (player.activeContainer instanceof ContainerWorkbench) {
+            } else if (nmsPlayer.activeContainer instanceof ContainerWorkbench) {
                 // workbenches only need player->grid and result->player (ALL stacks!)
 
                 if (clickedInventory.getType() == InventoryProxy.Type.PLAYER) {
@@ -64,76 +119,25 @@ public class ModernInventory extends JavaPlugin {
                         clickedInventory,
                         new InventoryProxy(
                             InventoryProxy.Type.CRAFTING,
-                            ((ContainerWorkbench) player.activeContainer).craftInventory,
-                            player,
+                            ((ContainerWorkbench) nmsPlayer.activeContainer).craftInventory /*btw .craftInventory is NOT a CraftInventory :)*/,
+                            nmsPlayer,
                             1
                         )
                     );
                 } else if (clickReceived.getSlot() == 0 && clickedInventory.get(0) != null) {
                     // result -> player
-                    val grid = new CraftInventory(((ContainerWorkbench) player.activeContainer).craftInventory);
-                    val gridProxy = new InventoryProxy(InventoryProxy.Type.CRAFTING, grid, player, 0);
-
-                    val result = clickedInventory.get(0);
-                    assert result != null; // I miss kotlin so damn bad
-
-                    // this only works because there is no vintage story style amount>1 crafting!
-                    val amount = Arrays.stream(grid.getContents())
-                        .filter(Objects::nonNull)
-                        .mapToInt(ItemStack::getAmount)
-                        .min()
-                        .orElse(0);
-
-                    val playerInventory = clickReceived.getPlayer().getInventory();
-
-                    if (
-                        playerInventory.firstEmpty() == -1
-                        && playerInventory
-                            .all(result.getType()).entrySet().stream()
-                            .noneMatch((entry) -> entry.getValue().getAmount() > result.getType().getMaxStackSize() - result.getAmount())
-                    ) {
-                        return;
-                    }
-
-                    // loop seems stupid here, but it is much safer in almost full inventories!
-                    int crafted;
-                    for (crafted = 0; crafted < amount; crafted++) {
-                        val remainder = playerInventory.addItem(result);
-
-                        if (!remainder.isEmpty()) {
-                            remainder.forEach((ignored, it) ->
-                                // TODO: make this vanish-safe by using player events that can get cancelled
-                                world.dropItemNaturally(clickReceived.getPlayer().getLocation(), it)
-                            );
-
-                            break;
-                        }
-                    }
-
-                    for (int i = 0; i < 9; i++) {
-                        val g = gridProxy.get(i);
-                        if (g == null) continue;
-
-                        // cannot be lower than that!
-                        if (g.getAmount() == crafted) {
-                            gridProxy.set(i, null);
-
-                            continue;
-                        }
-
-                        val clone = g.clone();
-                        clone.setAmount(g.getAmount() - crafted);
-                        gridProxy.set(i, clone);
-                    }
-
-                    //noinspection deprecation
-                    clickReceived.getPlayer().updateInventory();
+                    craftAll.accept(
+                        // no `!!`? :wilted_rose:
+                        Objects.requireNonNull(clickedInventory.get(0)),
+                        new InventoryProxy(InventoryProxy.Type.CRAFTING, ((ContainerWorkbench)nmsPlayer.activeContainer).craftInventory, nmsPlayer, 0),
+                        9
+                    );
                 }
-            } else if (player.activeContainer instanceof ContainerFurnace) {
+            } else if (nmsPlayer.activeContainer instanceof ContainerFurnace) {
                 if (clickedInventory.getType() == InventoryProxy.Type.PLAYER) {
                     // player -> furnace
                     // TODO: differentiate between fuel and smeltable!!! also wood in both depending on which one is full? how does modern do it?
-                    val tef = ((TileEntityFurnace)Hackaroni.getInventoryBypassPrivate(player.activeContainer));
+                    val tef = ((TileEntityFurnace)Hackaroni.getInventoryBypassPrivate(nmsPlayer.activeContainer));
                     val block = world.getBlockAt(tef.x, tef.y, tef.z);
 
                     // TODO
@@ -142,12 +146,23 @@ public class ModernInventory extends JavaPlugin {
 
                     // TODO
                 }
-            } else if (player.activeContainer instanceof ContainerDispenser) {
+            } else if (nmsPlayer.activeContainer instanceof ContainerDispenser) {
                 // TODO should be really easy
-            } else if (player.activeContainer instanceof ContainerPlayer) {
+            } else if (nmsPlayer.activeContainer instanceof ContainerPlayer) {
                 // only crafting, no armor (for now)
 
-                // TODO
+                 if (clickReceived.getSlot() == 0 && clickedInventory.get(0) != null) {
+                    // result -> player
+                     craftAll.accept(
+                         // no `!!`? :wilted_rose:
+                         Objects.requireNonNull(clickedInventory.get(0)),
+                         new InventoryProxy(InventoryProxy.Type.CRAFTING, ((ContainerPlayer)nmsPlayer.activeContainer).craftInventory, nmsPlayer, 0),
+                         4
+                     );
+
+                    // TODO
+                 }
+
             }
         } else if (clickReceived.isRightClick()) {
 
@@ -183,5 +198,17 @@ public class ModernInventory extends JavaPlugin {
      */
     private int translatePlayerInventory(int indexWithoutPacketOffset) {
         return (indexWithoutPacketOffset + 9) % 36;
+    }
+
+    private interface EndMySuffering<A, B, C> {
+        void accept(A a, B b, C c);
+
+        default EndMySuffering<A, B, C> andThen(EndMySuffering<? super A, ? super B, ? super C> e) {
+            Objects.requireNonNull(e);
+            return (f, g, h) -> {
+                this.accept(f, g, h);
+                e.accept(f, g, h);
+            };
+        }
     }
 }
