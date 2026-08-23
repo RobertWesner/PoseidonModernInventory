@@ -1,0 +1,5 @@
+name: PoseidonModernInventory
+main: io.wesner.robert.cb1060.moderninventory.ModernInventory
+version: ${version}
+description: "Modern inventory backport for the project poseidon beta 1.7.3 server."
+commands: {}
