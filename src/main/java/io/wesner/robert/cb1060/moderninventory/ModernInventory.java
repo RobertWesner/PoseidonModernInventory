@@ -50,6 +50,12 @@ public class ModernInventory extends JavaPlugin {
         val nmsPlayer = player.getHandle();
         val world = clickReceived.getPlayer().getWorld();
         val clickedInventory = new Packet102Translator(clickReceived.getContainer(), nmsPlayer).proxy(clickReceived.getSlot());
+        val playerInventory = new InventoryProxy(
+            InventoryProxy.Type.PLAYER,
+            player.getInventory(),
+            player,
+            0
+        );
 
         // I loathe Java. Thank you for giving us BiConsumer instead of arbitrary length...
         EndMySuffering<ItemStack, InventoryProxy, Integer> craftAll = ( result, grid, gridSize) -> {
@@ -60,11 +66,10 @@ public class ModernInventory extends JavaPlugin {
                 .min()
                 .orElse(0);
 
-            val playerInventory = clickReceived.getPlayer().getInventory();
-
             if (
-                playerInventory.firstEmpty() == -1
+                playerInventory.getInventory().firstEmpty() == -1
                     && playerInventory
+                    .getInventory()
                     .all(result.getType()).entrySet().stream()
                     .noneMatch((entry) -> entry.getValue().getAmount() > result.getType().getMaxStackSize() - result.getAmount())
             ) {
@@ -74,7 +79,7 @@ public class ModernInventory extends JavaPlugin {
             // loop seems stupid here, but it is much safer in almost full inventories!
             int crafted;
             for (crafted = 0; crafted < amount; crafted++) {
-                val remainder = playerInventory.addItem(result);
+                val remainder = playerInventory.add(result);
 
                 if (!remainder.isEmpty()) {
                     remainder.forEach((ignored, it) ->
@@ -111,7 +116,6 @@ public class ModernInventory extends JavaPlugin {
                 // Chests already work natively so uhhhh
             } else if (nmsPlayer.activeContainer instanceof ContainerWorkbench) {
                 // workbenches only need player->grid and result->player (ALL stacks!)
-
                 if (clickedInventory.getType() == InventoryProxy.Type.PLAYER) {
                     // player -> grid
                     transferFromSlot(
@@ -147,22 +151,36 @@ public class ModernInventory extends JavaPlugin {
                     // TODO
                 }
             } else if (nmsPlayer.activeContainer instanceof ContainerDispenser) {
-                // TODO should be really easy
+                if (clickedInventory.getType() == InventoryProxy.Type.PLAYER) {
+                    // player -> dispenser
+                    transferFromSlot(
+                        translatePlayerInventory(clickReceived.getSlot() - 9),
+                        clickedInventory,
+                        new InventoryProxy(
+                            InventoryProxy.Type.DISPENSER,
+                            Hackaroni.getInventoryBypassPrivate(nmsPlayer.activeContainer),
+                            player,
+                            0
+                        )
+                    );
+                } else {
+                    // dispenser -> player
+                    transferFromSlot(
+                        clickReceived.getSlot(),
+                        clickedInventory,
+                        playerInventory
+                    );
+                }
             } else if (nmsPlayer.activeContainer instanceof ContainerPlayer) {
                 // only crafting, no armor (for now)
-
                  if (clickReceived.getSlot() == 0 && clickedInventory.get(0) != null) {
                     // result -> player
                      craftAll.accept(
-                         // no `!!`? :wilted_rose:
                          Objects.requireNonNull(clickedInventory.get(0)),
                          new InventoryProxy(InventoryProxy.Type.CRAFTING, ((ContainerPlayer)nmsPlayer.activeContainer).craftInventory, nmsPlayer, 0),
                          4
                      );
-
-                    // TODO
                  }
-
             }
         } else if (clickReceived.isRightClick()) {
 
